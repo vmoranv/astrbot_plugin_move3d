@@ -22,7 +22,7 @@ def check_rembg_dependencies():
 
 def get_rembg_import_error():
     """获取rembg导入错误信息"""
-    return REMBG_IMPORT_ERROR if not REMBG_AVAILABLE else None
+    return None if REMBG_AVAILABLE else REMBG_IMPORT_ERROR
 
 @register("jb", "vmoranv", "一个将图片转换为裸眼3D简笔画的插件", "1.0.0")
 class MyPlugin(Star):
@@ -39,37 +39,11 @@ class MyPlugin(Star):
         """检查rembg依赖并报告错误"""
         if not check_rembg_dependencies():
             error_msg = get_rembg_import_error()
-            yield event.plain_result(f"缺少必要的依赖库: {error_msg}。\n请确保已安装 rembg 和 Pillow：pip install rembg Pillow")
-            return False
-        return True
+            return False, f"缺少必要的依赖库: {error_msg}。\n请确保已安装 rembg 和 Pillow：pip install rembg Pillow"
+        return True, None
             
-    @filter.command("jb")
-    async def image_to_sketch(self, event: AstrMessageEvent, _=None):
-        """将引用的图片转换为简笔画""" 
-        # 检查依赖
-        if not check_dependencies():
-            error_msg = get_import_error()
-            yield event.plain_result(f"缺少必要的依赖库: {error_msg}。\n请确保已安装 opencv-python 和 numpy，并且系统包含必要的库文件。")
-            return
-            
-        # 直接从配置中获取参数，而不是通过插件名称作为键
-        effect_type = self.config.get("effect_type", "sketch")
-        blur_kernel_size = max(1, int(self.config.get("blur_kernel_size", 21)))
-        canny_threshold1 = max(1, int(self.config.get("canny_threshold1", 80)))
-        canny_threshold2 = max(1, int(self.config.get("canny_threshold2", 100)))
-        
-        # 确保阈值2大于阈值1
-        if canny_threshold2 <= canny_threshold1:
-            canny_threshold2 = canny_threshold1 + 80
-            
-        # 调试日志：输出当前使用的配置参数
-        logger.info(f"当前插件配置: {self.config}")
-        logger.info(f"效果类型: {effect_type}")
-        logger.info(f"模糊核大小: {blur_kernel_size}")
-        logger.info(f"Canny阈值1: {canny_threshold1}")
-        logger.info(f"Canny阈值2: {canny_threshold2}")
-            
-        # 检查消息中是否包含图片
+    async def _extract_image_from_event(self, event: AstrMessageEvent) -> tuple[str | None, bool]:
+        """从事件中提取图片数据"""
         image_data_base64 = None
         image_found = False
         
@@ -102,10 +76,81 @@ class MyPlugin(Star):
                                 except Exception as e:
                                     logger.error(f"处理引用消息中的图片时出现未预期的错误: {e}")
         
+        return image_data_base64, image_found
+
+    async def _process_image_with_temp_files(self, event: AstrMessageEvent, image_data_base64: str,
+                                           output_suffix: str, process_func):
+        """处理图片的通用方法，包含临时文件管理"""
+        input_path = None
+        output_path = None
+        try:
+            # 将base64数据转换为bytes
+            if image_data_base64:
+                image_data = base64.b64decode(image_data_base64)
+            else:
+                yield event.plain_result("无法获取图片数据!")
+                return
+            
+            # 创建临时文件
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_input:
+                tmp_input.write(image_data)
+                input_path = tmp_input.name
+                
+            # 创建输出文件
+            output_path = input_path.replace('.jpg', output_suffix)
+            
+            # 调用处理函数
+            process_func(input_path, output_path)
+            
+            # 发送结果
+            result_image = Image.fromFileSystem(output_path)
+            yield event.chain_result([result_image])
+            
+        except Exception as e:
+            logger.error(f"处理图片时出错: {e}")
+            yield event.plain_result(f"处理图片时出错: {str(e)}")
+        finally:
+            # 清理临时文件
+            if input_path and os.path.exists(input_path):
+                os.unlink(input_path)
+            if output_path and os.path.exists(output_path):
+                os.unlink(output_path)
+
+    @filter.command("jb")
+    async def image_to_sketch(self, event: AstrMessageEvent, _=None):
+        """将引用的图片转换为简笔画""" 
+        # 检查依赖
+        if not check_dependencies():
+            error_msg = get_import_error()
+            yield event.plain_result(f"缺少必要的依赖库: {error_msg}。\n请确保已安装 opencv-python 和 numpy，并且系统包含必要的库文件。")
+            return
+            
+        # 直接从配置中获取参数，而不是通过插件名称作为键
+        effect_type = self.config.get("effect_type", "sketch")
+        blur_kernel_size = max(1, int(self.config.get("blur_kernel_size", 21)))
+        canny_threshold1 = max(1, int(self.config.get("canny_threshold1", 80)))
+        canny_threshold2 = max(1, int(self.config.get("canny_threshold2", 100)))
+        
+        # 确保阈值2大于阈值1
+        if canny_threshold2 <= canny_threshold1:
+            canny_threshold2 = canny_threshold1 + 80
+            
+        # 调试日志：输出当前使用的配置参数
+        logger.info(f"当前插件配置: {self.config}")
+        logger.info(f"效果类型: {effect_type}")
+        logger.info(f"模糊核大小: {blur_kernel_size}")
+        logger.info(f"Canny阈值1: {canny_threshold1}")
+        logger.info(f"Canny阈值2: {canny_threshold2}")
+            
+        # 提取图片数据
+        image_data_base64, image_found = await self._extract_image_from_event(event)
+        
         if not image_found:
             yield event.plain_result("请引用一张图片并发送 /jb 命令来转换为简笔画!")
             return
             
+        input_path = None
+        output_path = None
         try:
             # 将base64数据转换为bytes
             if image_data_base64:
@@ -135,13 +180,15 @@ class MyPlugin(Star):
             result_image = Image.fromFileSystem(output_path)
             yield event.chain_result([result_image])
             
-            # 清理临时文件
-            os.unlink(input_path)
-            os.unlink(output_path)
-            
         except Exception as e:
             logger.error(f"处理图片时出错: {e}")
             yield event.plain_result(f"处理图片时出错: {str(e)}")
+        finally:
+            # 清理临时文件
+            if input_path and os.path.exists(input_path):
+                os.unlink(input_path)
+            if output_path and os.path.exists(output_path):
+                os.unlink(output_path)
 
     @filter.command("jb3d")
     async def image_to_sketch_3d(self, event: AstrMessageEvent, _=None):
@@ -165,43 +212,15 @@ class MyPlugin(Star):
         logger.info(f"Canny阈值1: {canny_threshold1}")
         logger.info(f"Canny阈值2: {canny_threshold2}")
             
-        # 检查消息中是否包含图片
-        image_data_base64 = None
-        image_found = False
-        
-        # 从当前对话上下文中获取图片信息
-        if hasattr(event, 'message_obj') and event.message_obj and hasattr(event.message_obj, 'message'):
-            for comp in event.message_obj.message:
-                if isinstance(comp, Image):
-                    try:
-                        image_data_base64 = await comp.convert_to_base64()
-                        if image_data_base64:
-                            image_found = True
-                            break
-                    except (IOError, ValueError, OSError) as e:
-                        logger.warning(f"转换当前消息中的图片到base64失败: {e}")
-                    except Exception as e:
-                        logger.error(f"处理当前消息中的图片时出现未预期的错误: {e}")
-                elif isinstance(comp, Reply):
-                    # 处理引用消息中的图片
-                    if comp.chain:
-                        for reply_comp in comp.chain:
-                            if isinstance(reply_comp, Image):
-                                try:
-                                    image_data_base64 = await reply_comp.convert_to_base64()
-                                    if image_data_base64:
-                                        image_found = True
-                                        logger.info("从引用消息中获取到图片")
-                                        break
-                                except (IOError, ValueError, OSError) as e:
-                                    logger.warning(f"转换引用消息中的图片到base64失败: {e}")
-                                except Exception as e:
-                                    logger.error(f"处理引用消息中的图片时出现未预期的错误: {e}")
+        # 提取图片数据
+        image_data_base64, image_found = await self._extract_image_from_event(event)
         
         if not image_found:
             yield event.plain_result("请引用一张图片并发送 /jb3d 命令来转换为3D简笔画!")
             return
             
+        input_path = None
+        output_path = None
         try:
             # 将base64数据转换为bytes
             if image_data_base64:
@@ -225,58 +244,34 @@ class MyPlugin(Star):
             result_image = Image.fromFileSystem(output_path)
             yield event.chain_result([result_image])
             
-            # 清理临时文件
-            os.unlink(input_path)
-            os.unlink(output_path)
-            
         except Exception as e:
             logger.error(f"处理图片时出错: {e}")
             yield event.plain_result(f"处理图片时出错: {str(e)}")
+        finally:
+            # 清理临时文件
+            if input_path and os.path.exists(input_path):
+                os.unlink(input_path)
+            if output_path and os.path.exists(output_path):
+                os.unlink(output_path)
 
     @filter.command("rembg")
     async def remove_background(self, event: AstrMessageEvent, _=None):
         """移除引用图片的背景"""
         # 检查rembg依赖
-        if not self.check_and_report_rembg(event):
+        is_available, error_msg = self.check_and_report_rembg(event)
+        if not is_available:
+            yield event.plain_result(error_msg)
             return
             
-        # 检查消息中是否包含图片
-        image_data_base64 = None
-        image_found = False
-        
-        # 从当前对话上下文中获取图片信息
-        if hasattr(event, 'message_obj') and event.message_obj and hasattr(event.message_obj, 'message'):
-            for comp in event.message_obj.message:
-                if isinstance(comp, Image):
-                    try:
-                        image_data_base64 = await comp.convert_to_base64()
-                        if image_data_base64:
-                            image_found = True
-                            break
-                    except (IOError, ValueError, OSError) as e:
-                        logger.warning(f"转换当前消息中的图片到base64失败: {e}")
-                    except Exception as e:
-                        logger.error(f"处理当前消息中的图片时出现未预期的错误: {e}")
-                elif isinstance(comp, Reply):
-                    # 处理引用消息中的图片
-                    if comp.chain:
-                        for reply_comp in comp.chain:
-                            if isinstance(reply_comp, Image):
-                                try:
-                                    image_data_base64 = await reply_comp.convert_to_base64()
-                                    if image_data_base64:
-                                        image_found = True
-                                        logger.info("从引用消息中获取到图片")
-                                        break
-                                except (IOError, ValueError, OSError) as e:
-                                    logger.warning(f"转换引用消息中的图片到base64失败: {e}")
-                                except Exception as e:
-                                    logger.error(f"处理引用消息中的图片时出现未预期的错误: {e}")
+        # 提取图片数据
+        image_data_base64, image_found = await self._extract_image_from_event(event)
         
         if not image_found:
             yield event.plain_result("请引用一张图片并发送 /rembg 命令来移除背景!")
             return
             
+        input_path = None
+        output_path = None
         try:
             # 将base64数据转换为bytes
             if image_data_base64:
@@ -300,16 +295,18 @@ class MyPlugin(Star):
             result_image = Image.fromFileSystem(output_path)
             yield event.chain_result([result_image])
             
-            # 清理临时文件
-            os.unlink(input_path)
-            os.unlink(output_path)
-            
         except Exception as e:
             logger.error(f"处理图片时出错: {e}")
             yield event.plain_result(f"处理图片时出错: {str(e)}")
+        finally:
+            # 清理临时文件
+            if input_path and os.path.exists(input_path):
+                os.unlink(input_path)
+            if output_path and os.path.exists(output_path):
+                os.unlink(output_path)
 
     @filter.command("c3d")
-    async def image_to_c3d(self, event: AstrMessageEvent, _=None):
+    async def image_to_c3d(self, event: AstrMessageEvent):
         """将引用的图片转换为c3d效果"""
         # 检查依赖
         if not check_dependencies():
@@ -330,43 +327,15 @@ class MyPlugin(Star):
         logger.info(f"C3D阴影模糊: {shadow_blur}")
         logger.info(f"C3D阴影偏移X: {shadow_offset_x}")
             
-        # 检查消息中是否包含图片
-        image_data_base64 = None
-        image_found = False
-        
-        # 从当前对话上下文中获取图片信息
-        if hasattr(event, 'message_obj') and event.message_obj and hasattr(event.message_obj, 'message'):
-            for comp in event.message_obj.message:
-                if isinstance(comp, Image):
-                    try:
-                        image_data_base64 = await comp.convert_to_base64()
-                        if image_data_base64:
-                            image_found = True
-                            break
-                    except (IOError, ValueError, OSError) as e:
-                        logger.warning(f"转换当前消息中的图片到base64失败: {e}")
-                    except Exception as e:
-                        logger.error(f"处理当前消息中的图片时出现未预期的错误: {e}")
-                elif isinstance(comp, Reply):
-                    # 处理引用消息中的图片
-                    if comp.chain:
-                        for reply_comp in comp.chain:
-                            if isinstance(reply_comp, Image):
-                                try:
-                                    image_data_base64 = await reply_comp.convert_to_base64()
-                                    if image_data_base64:
-                                        image_found = True
-                                        logger.info("从引用消息中获取到图片")
-                                        break
-                                except (IOError, ValueError, OSError) as e:
-                                    logger.warning(f"转换引用消息中的图片到base64失败: {e}")
-                                except Exception as e:
-                                    logger.error(f"处理引用消息中的图片时出现未预期的错误: {e}")
+        # 提取图片数据
+        image_data_base64, image_found = await self._extract_image_from_event(event)
         
         if not image_found:
             yield event.plain_result("请引用一张图片并发送 /c3d 命令来转换为c3d效果!")
             return
             
+        input_path = None
+        output_path = None
         try:
             # 将base64数据转换为bytes
             if image_data_base64:
@@ -390,13 +359,15 @@ class MyPlugin(Star):
             result_image = Image.fromFileSystem(output_path)
             yield event.chain_result([result_image])
             
-            # 清理临时文件
-            os.unlink(input_path)
-            os.unlink(output_path)
-            
         except Exception as e:
             logger.error(f"处理图片时出错: {e}")
             yield event.plain_result(f"处理图片时出错: {str(e)}")
+        finally:
+            # 清理临时文件
+            if input_path and os.path.exists(input_path):
+                os.unlink(input_path)
+            if output_path and os.path.exists(output_path):
+                os.unlink(output_path)
 
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
