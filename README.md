@@ -1,5 +1,7 @@
 # move3d
 
+![:@astrbot_plugin_move3d](https://count.getloli.com/get/@astrbot_plugin_move3d?theme=booru-lewd)
+
 AstrBot 简笔画插件
 
 将用户引用的图片转换为简笔画风格裸眼3D图的 AstrBot 插件。
