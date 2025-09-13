@@ -1,0 +1,68 @@
+{
+  "effect_type": {
+    "description": "效果类型",
+    "type": "string",
+    "hint": "选择要应用的图像处理效果类型：'sketch' (素描风格) 或 'line_art' (线稿风格)",
+    "default": "sketch",
+    "options": [
+      "sketch",
+      "line_art"
+    ]
+  },
+  "blur_kernel_size": {
+    "description": "模糊核大小",
+    "type": "int",
+    "hint": "高斯模糊的核大小，必须为奇数，值越大模糊效果越强。有效范围: 1-51",
+    "default": 21,
+    "min": 1,
+    "max": 51
+  },
+  "canny_threshold1": {
+    "description": "Canny边缘检测阈值1",
+    "type": "int",
+    "hint": "Canny边缘检测的第一个阈值（较低阈值）。数值越小检测到的边缘越多，线条越密集；数值越大检测到的边缘越少，线条越稀疏。有效范围: 0-255。建议值范围: 50-150。",
+    "default": 80,
+    "min": 0,
+    "max": 255
+  },
+  "canny_threshold2": {
+    "description": "Canny边缘检测阈值2",
+    "type": "int",
+    "hint": "Canny边缘检测的第二个阈值（较高阈值）。通常应大于阈值1，用于确认边缘。数值越小边缘越敏感，数值越大边缘越清晰。有效范围: 0-255。建议值范围: 100-200。",
+    "default": 100,
+    "min": 0,
+    "max": 255
+  },
+  "c3d_contrast": {
+    "description": "C3D效果对比度",
+    "type": "float",
+    "hint": "调整C3D效果的对比度强度。值越大对比度越强，图像越鲜明；值越小对比度越弱，图像越平淡。有效范围: 0.1-3.0。建议值范围: 1.0-1.5。",
+    "default": 1.2,
+    "min": 0.1,
+    "max": 3.0
+  },
+  "c3d_shadow_scale": {
+    "description": "C3D阴影放大倍数",
+    "type": "float",
+    "hint": "调整C3D效果中阴影图的放大倍数。值越大阴影越大，3D效果越明显；值越小阴影越小，效果越 subtle。有效范围: 1.0-2.0。建议值范围: 1.05-1.2。",
+    "default": 1.1,
+    "min": 1.0,
+    "max": 2.0
+  },
+  "c3d_shadow_blur": {
+    "description": "C3D阴影模糊强度",
+    "type": "float",
+    "hint": "调整C3D效果中阴影的高斯模糊强度。值越大阴影越模糊，效果越柔和；值越小阴影越清晰，边缘越锐利。有效范围: 0.1-10.0。建议值范围: 1.5-5.0。",
+    "default": 2.5,
+    "min": 0.1,
+    "max": 10.0
+  },
+  "c3d_shadow_offset_x": {
+    "description": "C3D阴影水平偏移",
+    "type": "int",
+    "hint": "调整C3D效果中阴影的水平偏移像素。负值向左偏移，正值向右偏移。偏移越大3D立体感越强，但过大会显得不自然。有效范围: -50到50。建议值范围: -20到20。",
+    "default": -10,
+    "min": -50,
+    "max": 50
+  }
+}
